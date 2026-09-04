@@ -1,4 +1,9 @@
-const CACHE_NAME = 'boq-tracker-v1';
+// v2: network-first for app files. The old v1 cache-first strategy meant
+// that once a phone had cached the app, pushing fixed files to GitHub would
+// silently NOT reach that phone until the service-worker.js bytes themselves
+// changed. Network-first fixes that: online, you always get the latest
+// files; offline, it falls back to whatever was last cached.
+const CACHE_NAME = 'boq-tracker-v2';
 const ASSETS = [
   './',
   './index.html',
@@ -30,15 +35,12 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(event.request)
-        .then((resp) => {
-          const respClone = resp.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, respClone));
-          return resp;
-        })
-        .catch(() => cached);
-    })
+    fetch(event.request)
+      .then((resp) => {
+        const respClone = resp.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, respClone));
+        return resp;
+      })
+      .catch(() => caches.match(event.request))
   );
 });

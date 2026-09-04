@@ -59,9 +59,13 @@ function exportProjectToWorkbook(project) {
   maRows.push(['TOTAL', '', '', '', ma.totalAmount, ma.totalSpend, ma.toBeSpend]);
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([maHeader, ...maRows]), 'Main Abstract');
 
-  // --- Material Spend sheet ---
-  const msHeader = ['S.No', 'Description', 'Actual Quantity', 'Material Purchased', 'Total Spend'];
-  const msRows = (project.materialSpend || []).map((m, i) => [i + 1, m.material, m.actualQty, m.purchasedQty, m.totalSpend]);
+  // --- Material Spend sheet (linked: required qty comes from the BOQ) ---
+  const linked = computeMaterialSpendLinked(project);
+  const msHeader = ['Material', 'Required Qty', 'Purchased Qty', 'Remaining Qty', 'Total Spend', 'Remaining to Spend'];
+  const msRows = [
+    ...linked.bulkRows.map(r => [r.material, r.requiredQty, r.purchasedQty, r.remainingQty, r.totalSpend, r.remainingAmount]),
+    ...linked.customRows.map(r => [r.material, '', r.purchasedQty, '', r.totalSpend, '']),
+  ];
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([msHeader, ...msRows]), 'Material Spend');
 
   // --- Daily Spend sheet ---
@@ -71,9 +75,10 @@ function exportProjectToWorkbook(project) {
   dsRows.push(['', 'TOTAL', '', dsRun.totalReceived, dsRun.totalSpent, dsRun.balance, '', '']);
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([dsHeader, ...dsRows]), 'Daily Spend');
 
-  // --- Schedule sheet ---
-  const schHeader = ['Task', 'Category', 'Planned Start', 'Planned End', 'Actual Start', 'Actual End', 'Status', 'Progress %', 'Notes'];
-  const schRows = (project.schedule || []).map(s => [s.task, s.category, s.plannedStart, s.plannedEnd, s.actualStart, s.actualEnd, s.status, s.progressPct, s.notes]);
+  // --- Schedule sheet (dates are calculated from start date + order + duration) ---
+  const plan = computeSchedulePlan(project);
+  const schHeader = ['Task', 'Category', 'Duration (days)', 'Labour Required', 'Planned Start', 'Planned End', 'Actual Start', 'Actual End', 'Status', 'Progress %', 'Notes'];
+  const schRows = plan.map(s => [s.task, s.category, s.durationDays, s.labour, s.plannedStart, s.plannedEnd, s.actualStart, s.actualEnd, s.status, s.progressPct, s.notes]);
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([schHeader, ...schRows]), 'Schedule');
 
   return wb;
@@ -147,8 +152,10 @@ function importWorkbookToProject(wb, projectName) {
 
   const ms = sheet('Material Spend');
   if (ms && ms.length > 1) {
-    project.materialSpend = ms.slice(1).filter(r => r[1]).map(r => ({
-      id: uid('spend'), material: r[1], actualQty: num(r[2]), purchasedQty: num(r[3]), totalSpend: num(r[4]),
+    // New layout: Material, Required Qty, Purchased Qty, Remaining Qty, Total Spend, Remaining to Spend
+    // (Required/Remaining are recalculated from the BOQ, so only material/purchased/spend are imported)
+    project.materialSpend = ms.slice(1).filter(r => r[0]).map(r => ({
+      id: uid('spend'), material: r[0], purchasedQty: num(r[2]), totalSpend: num(r[4]),
     }));
   }
 
@@ -162,9 +169,11 @@ function importWorkbookToProject(wb, projectName) {
 
   const sch = sheet('Schedule');
   if (sch && sch.length > 1) {
+    // New layout: Task, Category, Duration, Labour, PlannedStart, PlannedEnd, ActualStart, ActualEnd, Status, Progress, Notes
+    // Planned dates are recalculated from the start date + order, so they aren't imported directly.
     project.schedule = sch.slice(1).filter(r => r[0]).map(r => ({
-      id: uid('task'), task: r[0], category: r[1] || '', plannedStart: r[2] || '', plannedEnd: r[3] || '',
-      actualStart: r[4] || '', actualEnd: r[5] || '', status: r[6] || 'Not Started', progressPct: num(r[7]), notes: r[8] || '',
+      id: uid('task'), task: r[0], category: r[1] || '', durationDays: num(r[2], 1), labour: num(r[3]),
+      actualStart: r[6] || '', actualEnd: r[7] || '', status: r[8] || 'Not Started', progressPct: num(r[9]), notes: r[10] || '', linkedSectionId: '',
     }));
   }
 

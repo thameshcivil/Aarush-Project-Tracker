@@ -66,13 +66,14 @@ function newProject(name) {
     mailTo: '',
     createdAt: new Date().toISOString(),
     wastagePct: 10, // % wastage applied on top of raw material totals
+    scheduleStartDate: new Date().toISOString().slice(0, 10), // baseline date the work-plan calculates from
     coefficients: JSON.parse(JSON.stringify(DEFAULT_COEFFICIENTS)),
     materialRates: JSON.parse(JSON.stringify(DEFAULT_MATERIAL_RATES)),
     sections: [], // [{id, label, name, items:[...]}]
     otherAbstractItems: [], // Main-abstract-only lines: Door, Window, Electrical, Plumbing, Labour, etc.
-    materialSpend: [], // [{id, material, actualQty, purchasedQty, totalSpend}]
+    materialSpend: [], // [{id, material, purchasedQty, totalSpend}] — custom/extra materials only; the 5 bulk materials are auto-tracked, see computeMaterialSpendLinked
     dailySpend: [], // [{id, date, notation, quantity, received, spent, remark1, remark2}]
-    schedule: [], // [{id, task, category, plannedStart, plannedEnd, actualStart, actualEnd, status, progressPct, notes}]
+    schedule: [], // [{id, task, category, durationDays, labour, status, progressPct, notes, linkedSectionId}] — order = array order; dates are calculated, not stored
   };
 }
 
@@ -278,4 +279,94 @@ function computeScheduleProgress(project) {
   const avg = tasks.reduce((s, t) => s + num(t.progressPct), 0) / tasks.length;
   const done = tasks.filter(t => num(t.progressPct) >= 100).length;
   return { pct: Math.round(avg), total: tasks.length, done };
+}
+
+/* ---------- Linked material spend tracker ---------- */
+const BULK_MATERIALS = [
+  { key: 'cement', material: 'Cement', unit: 'Bags' },
+  { key: 'pSand', material: 'P.Sand', unit: 'Cft' },
+  { key: 'mSand', material: 'M.Sand', unit: 'Cft' },
+  { key: 'bricks', material: 'Bricks', unit: 'Nos' },
+  { key: 'agg', material: '20mm Aggregate', unit: 'Cft' },
+];
+
+function findMaterialSpendRow(project, materialName) {
+  return (project.materialSpend || []).find(m => m.material.toLowerCase() === materialName.toLowerCase());
+}
+
+// Ensures a materialSpend row exists for this material name and returns it —
+// used so editing a bulk material's purchased/spend fields has somewhere to write.
+function upsertMaterialSpendRow(project, materialName) {
+  let row = findMaterialSpendRow(project, materialName);
+  if (!row) {
+    row = { id: uid('spend'), material: materialName, purchasedQty: 0, totalSpend: 0 };
+    project.materialSpend.push(row);
+  }
+  return row;
+}
+
+// The "linked" tracker: for each of the 5 bulk materials, pairs the
+// computed *required* quantity (from the BOQ + coefficients + wastage) with
+// whatever the user has logged as purchased/spent, so buying decisions are
+// driven directly by the BOQ instead of a disconnected list.
+function computeMaterialSpendLinked(project) {
+  const a2 = computeAbstract2(project);
+  const bulkRows = BULK_MATERIALS.map(bm => {
+    const spendRow = findMaterialSpendRow(project, bm.material) || { purchasedQty: 0, totalSpend: 0 };
+    const requiredQty = a2.withWastage[bm.key];
+    const rate = rateFor(project, bm.material);
+    const requiredAmount = requiredQty * rate;
+    return {
+      material: bm.material, unit: bm.unit, requiredQty,
+      purchasedQty: num(spendRow.purchasedQty), totalSpend: num(spendRow.totalSpend),
+      remainingQty: Math.max(0, requiredQty - num(spendRow.purchasedQty)),
+      requiredAmount, remainingAmount: Math.max(0, requiredAmount - num(spendRow.totalSpend)),
+    };
+  });
+  const bulkNames = BULK_MATERIALS.map(b => b.material.toLowerCase());
+  const customRows = (project.materialSpend || []).filter(m => !bulkNames.includes(m.material.toLowerCase()));
+  return { bulkRows, customRows };
+}
+
+/* ---------- Schedule of Work: workflow-driven, auto-calculated dates ---------- */
+
+function addDays(dateStr, days) {
+  const d = new Date((dateStr || todayStr()) + 'T00:00:00');
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+function todayStr() { return new Date().toISOString().slice(0, 10); }
+
+// Walks tasks in their listed order, chaining each one's start to right
+// after the previous one's end — the "ask the workflow, calculate the
+// schedule" behaviour: you tell it the order and duration, it works out
+// the dates, instead of you typing dates in yourself.
+function computeSchedulePlan(project) {
+  let cursor = project.scheduleStartDate || todayStr();
+  return (project.schedule || []).map(t => {
+    const duration = Math.max(1, num(t.durationDays, 1));
+    const plannedStart = cursor;
+    const plannedEnd = addDays(cursor, duration - 1);
+    cursor = addDays(plannedEnd, 1);
+    return { ...t, plannedStart, plannedEnd, durationDays: duration };
+  });
+}
+
+function computeUpcomingWork(project, daysAhead) {
+  const horizon = addDays(todayStr(), daysAhead || 7);
+  const today = todayStr();
+  return computeSchedulePlan(project)
+    .filter(t => t.status !== 'Completed' && t.plannedStart <= horizon && t.plannedEnd >= today)
+    .sort((a, b) => a.plannedStart.localeCompare(b.plannedStart));
+}
+
+function computeTodayReport(project) {
+  const today = todayStr();
+  const plan = computeSchedulePlan(project);
+  const activeToday = plan.filter(t => (t.plannedStart <= today && t.plannedEnd >= today) || t.status === 'In Progress');
+  const totalLabour = activeToday.reduce((s, t) => s + num(t.labour), 0);
+  const todaysSpend = (project.dailySpend || []).filter(d => d.date === today);
+  const receivedToday = todaysSpend.reduce((s, d) => s + num(d.received), 0);
+  const spentToday = todaysSpend.reduce((s, d) => s + num(d.spent), 0);
+  return { today, activeToday, totalLabour, todaysSpend, receivedToday, spentToday };
 }
