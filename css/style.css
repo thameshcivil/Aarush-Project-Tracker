@@ -102,14 +102,43 @@ html, body {
 .item-table thead, .item-table tbody { display: table; width: 100%; table-layout: fixed; }
 .item-table th { text-align: left; color: var(--muted); font-weight: 600; padding: 6px 4px; border-bottom: 1px solid var(--border); font-size: 11px; }
 .item-table td { padding: 3px 4px; border-bottom: 1px solid var(--border); }
-.item-table.wide { min-width: 640px; }
+.item-table.wide { min-width: 760px; }
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: var(--radius); box-shadow: 0 1px 3px rgba(0,0,0,0.06); background: var(--card); }
+.table-scroll .item-table { box-shadow: none; }
+.scroll-hint { font-size: 11.5px; color: var(--muted); margin: 4px 0 8px; }
 .totalrow td { font-weight: 700; background: #f0f5f2; }
 
-.cell-input { width: 100%; border: 1px solid transparent; background: #f7f8f7; border-radius: 6px; padding: 6px 6px; font-size: 12.5px; color: var(--text); }
+.cell-input {
+  width: 100%; border: 1.5px solid var(--border); background: #f7f8f7; border-radius: 8px;
+  padding: 10px 10px; font-size: 15px; color: var(--text); min-height: 42px;
+}
 .cell-input:focus { border-color: var(--primary); outline: none; background: #fff; }
 .cell-input.num { text-align: right; }
-.cell-input.notes { width: 100%; min-height: 50px; resize: vertical; margin-top: 8px; font-family: inherit; }
+.cell-input.notes { width: 100%; min-height: 60px; resize: vertical; margin-top: 8px; font-family: inherit; }
 .qty-cell { font-weight: 700; text-align: right; padding: 3px 6px; }
+
+/* --- Card-based item editor (BOQ items, Material Spend rows, Daily Spend entries) ---
+   Replaces cramped multi-column table rows: every field gets a label and a
+   full-width, properly tappable input instead of a ~25px sliver. */
+.item-card-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+.item-card {
+  background: #f7faf8; border: 1px solid var(--border); border-radius: 12px; padding: 12px;
+}
+.item-card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.item-desc { flex: 1; font-weight: 600; }
+.field-label {
+  display: block; font-size: 11.5px; color: var(--muted); font-weight: 600;
+  margin-bottom: 8px; text-transform: uppercase; letter-spacing: .03em;
+}
+.field-label .cell-input, .field-label select.cell-input { margin-top: 4px; text-transform: none; letter-spacing: normal; font-weight: 400; }
+.item-fields-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; margin-bottom: 8px; }
+.item-fields-grid.three { grid-template-columns: 1fr 1fr 1fr; }
+.qty-badge {
+  display: inline-block; background: var(--primary); color: #fff; font-size: 13px; font-weight: 700;
+  padding: 5px 10px; border-radius: 8px; margin-top: 2px;
+}
+.item-materials { font-size: 11.5px; color: var(--muted); margin-top: 6px; line-height: 1.5; }
+.empty.small { padding: 18px 8px; font-size: 13px; }
 
 .section-total { font-size: 12.5px; color: var(--muted); margin: 10px 0; line-height: 1.6; }
 .linkbtn { background: none; border: none; color: var(--primary); font-weight: 600; font-size: 13px; cursor: pointer; padding: 4px 0; }

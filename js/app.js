@@ -7,6 +7,19 @@ const NAV = document.getElementById('bottomnav');
 
 let state = { screen: 'projects', project: null };
 
+// Assigns val to obj[field], parsing to a number when field is a known
+// numeric column so stored data (and the Excel export) uses real numbers
+// instead of strings. Falls back to 0 on invalid numeric input rather than
+// silently storing NaN.
+function setField(obj, field, val, numericFields) {
+  if (numericFields && numericFields.includes(field)) {
+    const n = parseFloat(val);
+    obj[field] = isNaN(n) ? 0 : n;
+  } else {
+    obj[field] = val;
+  }
+}
+
 function fmt(n) {
   const v = Number(n) || 0;
   return v.toLocaleString('en-IN', { maximumFractionDigits: 2 });
@@ -49,7 +62,7 @@ function render() {
 
 function renderNav() {
   const items = [
-    ['dashboard', '🏠', 'Home'],
+    ['dashboard', '📊', 'Overview'],
     ['measurements', '📐', 'BOQ'],
     ['abstracts', '📊', 'Abstract'],
     ['daily', '💵', 'Spend'],
@@ -200,31 +213,42 @@ function renderSection(p, sec) {
       <input class="inline-input title" value="${esc(sec.name)}" onchange="updateSectionField('${sec.id}','name',this.value)">
       <button class="iconbtn danger" onclick="deleteSectionUI('${sec.id}')">🗑</button>
     </div>
-    <table class="item-table">
-      <thead><tr><th>Description</th><th>Notation</th><th>Nos</th><th>Mem</th><th>L</th><th>B</th><th>D</th><th>Qty</th><th></th></tr></thead>
-      <tbody>
-        ${(sec.items||[]).map(item => renderItemRow(p, sec, item)).join('')}
-      </tbody>
-    </table>
-    <div class="section-total">Total Qty: <b>${fmt(t.qty)}</b> &nbsp;|&nbsp; Cement: <b>${fmt(t.cement)}</b> bags &nbsp;|&nbsp; M.Sand: <b>${fmt(t.mSand)}</b> cft &nbsp;|&nbsp; Bricks: <b>${fmt(t.bricks)}</b> &nbsp;|&nbsp; Agg: <b>${fmt(t.agg)}</b> cft</div>
+    ${(sec.items||[]).length === 0 ? '<div class="empty small">No items yet.</div>' : ''}
+    <div class="item-card-list">
+      ${(sec.items||[]).map(item => renderItemCard(p, sec, item)).join('')}
+    </div>
+    <div class="section-total">Section Total — Qty: <b>${fmt(t.qty)}</b> &nbsp;·&nbsp; Cement: <b>${fmt(t.cement)}</b> bags &nbsp;·&nbsp; M.Sand: <b>${fmt(t.mSand)}</b> cft &nbsp;·&nbsp; Bricks: <b>${fmt(t.bricks)}</b> &nbsp;·&nbsp; Agg: <b>${fmt(t.agg)}</b> cft</div>
     <button class="linkbtn" onclick="addItemUI('${sec.id}')">+ Add Item</button>
   </div>`;
 }
 
-function renderItemRow(p, sec, item) {
+// Each measurement item is its own card with full-width, clearly labeled
+// fields — not a cramped table row. This is deliberately mobile-first: on a
+// ~360-390px phone, a 9-column table leaves ~25px per field, too narrow to
+// tap or read reliably. Stacked fields give every input room to be used.
+function renderItemCard(p, sec, item) {
   const m = computeItemMaterials(p, item);
-  const notationOptions = p.coefficients.map(c => `<option value="${c.notation}" ${item.notation===c.notation?'selected':''}>${c.notation}</option>`).join('');
-  return `<tr>
-    <td><input class="cell-input" value="${esc(item.description)}" onchange="updateItemField('${sec.id}','${item.id}','description',this.value)"></td>
-    <td><select class="cell-input" onchange="updateItemField('${sec.id}','${item.id}','notation',this.value)">${notationOptions}</select></td>
-    <td><input class="cell-input num" type="number" step="any" value="${item.nos}" onchange="updateItemField('${sec.id}','${item.id}','nos',this.value)"></td>
-    <td><input class="cell-input num" type="number" step="any" value="${item.member}" onchange="updateItemField('${sec.id}','${item.id}','member',this.value)"></td>
-    <td><input class="cell-input num" type="number" step="any" value="${item.length}" onchange="updateItemField('${sec.id}','${item.id}','length',this.value)"></td>
-    <td><input class="cell-input num" type="number" step="any" value="${item.breadth}" onchange="updateItemField('${sec.id}','${item.id}','breadth',this.value)"></td>
-    <td><input class="cell-input num" type="number" step="any" value="${item.depth}" onchange="updateItemField('${sec.id}','${item.id}','depth',this.value)"></td>
-    <td class="qty-cell">${fmt(m.qty)}</td>
-    <td><button class="iconbtn danger" onclick="deleteItemUI('${sec.id}','${item.id}')">✕</button></td>
-  </tr>`;
+  const notationOptions = p.coefficients.map(c => `<option value="${c.notation}" ${item.notation===c.notation?'selected':''}>${c.notation} — ${esc(c.label)}</option>`).join('');
+  return `
+  <div class="item-card">
+    <div class="item-card-head">
+      <input class="cell-input item-desc" value="${esc(item.description)}" placeholder="Item description"
+        onchange="updateItemField('${sec.id}','${item.id}','description',this.value)">
+      <button class="iconbtn danger" onclick="deleteItemUI('${sec.id}','${item.id}')">✕</button>
+    </div>
+    <label class="field-label">Notation
+      <select class="cell-input" onchange="updateItemField('${sec.id}','${item.id}','notation',this.value)">${notationOptions}</select>
+    </label>
+    <div class="item-fields-grid">
+      <label class="field-label">Nos<input class="cell-input num" type="number" step="any" inputmode="decimal" value="${item.nos}" onchange="updateItemField('${sec.id}','${item.id}','nos',this.value)"></label>
+      <label class="field-label">Member Count<input class="cell-input num" type="number" step="any" inputmode="decimal" value="${item.member}" onchange="updateItemField('${sec.id}','${item.id}','member',this.value)"></label>
+      <label class="field-label">Length (ft)<input class="cell-input num" type="number" step="any" inputmode="decimal" value="${item.length}" onchange="updateItemField('${sec.id}','${item.id}','length',this.value)"></label>
+      <label class="field-label">Breadth (ft)<input class="cell-input num" type="number" step="any" inputmode="decimal" value="${item.breadth}" onchange="updateItemField('${sec.id}','${item.id}','breadth',this.value)"></label>
+      <label class="field-label">Depth (ft)<input class="cell-input num" type="number" step="any" inputmode="decimal" value="${item.depth}" onchange="updateItemField('${sec.id}','${item.id}','depth',this.value)"></label>
+    </div>
+    <div class="qty-badge">Qty: <b>${fmt(m.qty)}</b> ${esc((findCoefficient(p,item.notation)||{}).unit||'')}</div>
+    <div class="item-materials">Cement ${fmt(m.cement)} bags · P.Sand ${fmt(m.pSand)} cft · M.Sand ${fmt(m.mSand)} cft · Bricks ${fmt(m.bricks)} · Agg ${fmt(m.agg)} cft</div>
+  </div>`;
 }
 
 function addSectionUI() {
@@ -240,7 +264,7 @@ function deleteSectionUI(id) {
 }
 function updateSectionField(id, field, val) {
   const sec = state.project.sections.find(s => s.id === id);
-  sec[field] = val;
+  setField(sec, field, val, []);
   saveProject(state.project);
 }
 function addItemUI(secId) {
@@ -257,10 +281,8 @@ function deleteItemUI(secId, itemId) {
 function updateItemField(secId, itemId, field, val) {
   const sec = state.project.sections.find(s => s.id === secId);
   const item = sec.items.find(i => i.id === itemId);
-  const numeric = ['nos','member','length','breadth','depth'];
-  item[field] = numeric.includes(field) ? val : val;
-  saveProject(state.project);
-  render();
+  setField(item, field, val, ['nos','member','length','breadth','depth']);
+  refreshAndRender();
 }
 window.addSectionUI = addSectionUI;
 window.deleteSectionUI = deleteSectionUI;
@@ -276,6 +298,7 @@ function screenCoefficients() {
   <div class="topbar"><button class="back" onclick="route('settings')">‹</button><h1>Coefficients</h1></div>
   <div class="content">
     <p class="hint">These are the material quantities used per 1 unit of each work type. Edit them to match your site's actual mix ratios — every BOQ item using that notation recalculates automatically.</p>
+    <p class="scroll-hint">↔ Swipe sideways to see every column</p>
     <table class="item-table wide">
       <thead><tr><th>Notation</th><th>Label</th><th>Unit</th><th>Cement/unit</th><th>P.Sand/unit</th><th>M.Sand/unit</th><th>Bricks/unit</th><th>Agg/unit</th><th></th></tr></thead>
       <tbody>
@@ -296,9 +319,9 @@ function screenCoefficients() {
   <div class="fab-row"><button class="fab" onclick="addCoeff()">+ Add Coefficient</button></div>`;
 }
 function updateCoeff(i, field, val) {
-  const numeric = ['cement','pSand','mSand','bricks','agg'];
-  state.project.coefficients[i][field] = numeric.includes(field) ? val : val;
+  setField(state.project.coefficients[i], field, val, ['cement','pSand','mSand','bricks','agg']);
   saveProject(state.project);
+  render();
 }
 function addCoeff() {
   state.project.coefficients.push({ notation: 'NEW', label: 'New Work Type', cement:0, pSand:0, mSand:0, bricks:0, agg:0, unit:'Cft', note:'' });
@@ -339,7 +362,8 @@ function screenRates() {
     </div>
 
     <div class="section-title">Other Cost Items (Doors, Electrical, Labour, etc.)</div>
-    <table class="item-table">
+    <p class="scroll-hint">↔ Swipe sideways to see every column</p>
+    <table class="item-table wide">
       <thead><tr><th>Description</th><th>Unit</th><th>Qty</th><th>Rate</th><th>Spend</th><th></th></tr></thead>
       <tbody>
         ${(p.otherAbstractItems||[]).map((o,i) => `<tr>
@@ -356,14 +380,14 @@ function screenRates() {
   </div>`;
 }
 function updateRate(i, field, val) {
-  state.project.materialRates[i][field] = field==='rate' ? val : val;
+  setField(state.project.materialRates[i], field, val, ['rate']);
   saveProject(state.project);
 }
 function addRate() { state.project.materialRates.push({material:'New Material', unit:'Unit', rate:0}); refreshAndRender(); }
 function deleteRate(i) { state.project.materialRates.splice(i,1); refreshAndRender(); }
-function updateWastage(val) { state.project.wastagePct = val; saveProject(state.project); }
+function updateWastage(val) { setField(state.project, 'wastagePct', val, ['wastagePct']); saveProject(state.project); }
 function addOther() { state.project.otherAbstractItems.push({id: uid('oth'), description:'New item', unit:'LS', quantity:1, rate:0, spend:0, isLumpSum:false}); refreshAndRender(); }
-function updateOther(i, field, val) { state.project.otherAbstractItems[i][field] = val; saveProject(state.project); }
+function updateOther(i, field, val) { setField(state.project.otherAbstractItems[i], field, val, ['quantity','rate','spend']); saveProject(state.project); }
 function deleteOther(i) { state.project.otherAbstractItems.splice(i,1); refreshAndRender(); }
 window.updateRate = updateRate; window.addRate = addRate; window.deleteRate = deleteRate;
 window.updateWastage = updateWastage; window.addOther = addOther; window.updateOther = updateOther; window.deleteOther = deleteOther;
@@ -378,13 +402,15 @@ function screenAbstracts() {
   <div class="topbar"><button class="back" onclick="route('dashboard')">‹</button><h1>Abstracts</h1></div>
   <div class="content">
     <div class="section-title">Abstract-1 · By Work Section</div>
-    <table class="item-table">
+    <p class="scroll-hint">↔ Swipe sideways to see every column</p>
+    <table class="item-table wide">
       <thead><tr><th>Section</th><th>Notation</th><th>Qty</th><th>Cement</th><th>M.Sand</th><th>Bricks</th><th>Agg</th></tr></thead>
       <tbody>${a1.map(r => `<tr><td>${esc(r.label)}</td><td>${esc(r.notation)}</td><td>${fmt(r.qty)}</td><td>${fmt(r.cement)}</td><td>${fmt(r.mSand)}</td><td>${fmt(r.bricks)}</td><td>${fmt(r.agg)}</td></tr>`).join('')}</tbody>
     </table>
 
     <div class="section-title">Abstract-2 · By Notation (with wastage)</div>
-    <table class="item-table">
+    <p class="scroll-hint">↔ Swipe sideways to see every column</p>
+    <table class="item-table wide">
       <thead><tr><th>Notation</th><th>Qty</th><th>Cement</th><th>M.Sand</th><th>Bricks</th><th>Agg</th></tr></thead>
       <tbody>
         ${a2.rows.map(r => `<tr><td>${esc(r.notation)}</td><td>${fmt(r.qty)}</td><td>${fmt(r.cement)}</td><td>${fmt(r.mSand)}</td><td>${fmt(r.bricks)}</td><td>${fmt(r.agg)}</td></tr>`).join('')}
@@ -394,7 +420,8 @@ function screenAbstracts() {
     </table>
 
     <div class="section-title">Main Abstract · Cost Estimate</div>
-    <table class="item-table">
+    <p class="scroll-hint">↔ Swipe sideways to see every column</p>
+    <table class="item-table wide">
       <thead><tr><th>Item</th><th>Qty</th><th>Rate</th><th>Amount</th><th>Spent</th><th>To Spend</th></tr></thead>
       <tbody>
         ${ma.rows.map(r => `<tr><td>${esc(r.material)}</td><td>${fmt(r.qty)}</td><td>${fmt(r.rate)}</td><td>${inr(r.amount)}</td><td>${inr(r.spend)}</td><td>${inr(r.toBeSpend)}</td></tr>`).join('')}
@@ -411,23 +438,24 @@ function screenMaterialSpend() {
   <div class="topbar"><button class="back" onclick="route('dashboard')">‹</button><h1>Material Spend</h1></div>
   <div class="content">
     <p class="hint">Track what you've actually purchased against the required quantities.</p>
-    <table class="item-table">
-      <thead><tr><th>Material</th><th>Actual Qty Used</th><th>Purchased</th><th>Total Spend (₹)</th><th></th></tr></thead>
-      <tbody>
-        ${(p.materialSpend||[]).map((m,i) => `<tr>
-          <td><input class="cell-input" value="${esc(m.material)}" onchange="updateSpend(${i},'material',this.value)"></td>
-          <td><input class="cell-input num" type="number" step="any" value="${m.actualQty}" onchange="updateSpend(${i},'actualQty',this.value)"></td>
-          <td><input class="cell-input num" type="number" step="any" value="${m.purchasedQty}" onchange="updateSpend(${i},'purchasedQty',this.value)"></td>
-          <td><input class="cell-input num" type="number" step="any" value="${m.totalSpend}" onchange="updateSpend(${i},'totalSpend',this.value)"></td>
-          <td><button class="iconbtn danger" onclick="deleteSpend(${i})">✕</button></td>
-        </tr>`).join('')}
-      </tbody>
-    </table>
+    ${(p.materialSpend||[]).length === 0 ? '<div class="empty small">No materials logged yet.</div>' : ''}
+    ${(p.materialSpend||[]).map((m,i) => `
+      <div class="item-card">
+        <div class="item-card-head">
+          <input class="cell-input item-desc" value="${esc(m.material)}" placeholder="Material name" onchange="updateSpend(${i},'material',this.value)">
+          <button class="iconbtn danger" onclick="deleteSpend(${i})">✕</button>
+        </div>
+        <div class="item-fields-grid three">
+          <label class="field-label">Actual Qty Used<input class="cell-input num" type="number" step="any" inputmode="decimal" value="${m.actualQty}" onchange="updateSpend(${i},'actualQty',this.value)"></label>
+          <label class="field-label">Purchased<input class="cell-input num" type="number" step="any" inputmode="decimal" value="${m.purchasedQty}" onchange="updateSpend(${i},'purchasedQty',this.value)"></label>
+          <label class="field-label">Total Spend (₹)<input class="cell-input num" type="number" step="any" inputmode="decimal" value="${m.totalSpend}" onchange="updateSpend(${i},'totalSpend',this.value)"></label>
+        </div>
+      </div>`).join('')}
     <button class="linkbtn" onclick="addSpend()">+ Add Material Row</button>
   </div>`;
 }
 function addSpend() { state.project.materialSpend.push({id: uid('spend'), material:'New Material', actualQty:0, purchasedQty:0, totalSpend:0}); refreshAndRender(); }
-function updateSpend(i, field, val) { state.project.materialSpend[i][field] = val; saveProject(state.project); }
+function updateSpend(i, field, val) { setField(state.project.materialSpend[i], field, val, ['actualQty','purchasedQty','totalSpend']); saveProject(state.project); render(); }
 function deleteSpend(i) { state.project.materialSpend.splice(i,1); refreshAndRender(); }
 window.addSpend = addSpend; window.updateSpend = updateSpend; window.deleteSpend = deleteSpend;
 
@@ -443,21 +471,26 @@ function screenDailySpend() {
       <div class="stat"><div class="stat-label">Total Spent</div><div class="stat-value">${inr(run.totalSpent)}</div></div>
       <div class="stat"><div class="stat-label">Balance in Hand</div><div class="stat-value">${inr(run.balance)}</div></div>
     </div>
-    <table class="item-table wide">
-      <thead><tr><th>Date</th><th>Description</th><th>Qty</th><th>Received</th><th>Spent</th><th>Balance</th><th>Remark</th><th></th></tr></thead>
-      <tbody>
-        ${(p.dailySpend||[]).map((d,i) => `<tr>
-          <td><input class="cell-input" type="date" value="${d.date}" onchange="updateDaily(${i},'date',this.value)"></td>
-          <td><input class="cell-input" value="${esc(d.notation)}" onchange="updateDaily(${i},'notation',this.value)"></td>
-          <td><input class="cell-input num" type="number" step="any" value="${d.quantity}" onchange="updateDaily(${i},'quantity',this.value)"></td>
-          <td><input class="cell-input num" type="number" step="any" value="${d.received}" onchange="updateDaily(${i},'received',this.value)"></td>
-          <td><input class="cell-input num" type="number" step="any" value="${d.spent}" onchange="updateDaily(${i},'spent',this.value)"></td>
-          <td class="qty-cell">${fmt(run.rows[i] ? run.rows[i].balance : 0)}</td>
-          <td><input class="cell-input" value="${esc(d.remark1)}" onchange="updateDaily(${i},'remark1',this.value)"></td>
-          <td><button class="iconbtn danger" onclick="deleteDaily(${i})">✕</button></td>
-        </tr>`).join('')}
-      </tbody>
-    </table>
+    ${(p.dailySpend||[]).length === 0 ? '<div class="empty small">No entries yet.</div>' : ''}
+    ${(p.dailySpend||[]).slice().reverse().map((d) => {
+      const i = p.dailySpend.indexOf(d);
+      const runRow = run.rows.find(r => r.id === d.id);
+      return `
+      <div class="item-card">
+        <div class="item-card-head">
+          <input class="cell-input" type="date" value="${d.date}" onchange="updateDaily(${i},'date',this.value)" style="max-width:150px">
+          <button class="iconbtn danger" onclick="deleteDaily(${i})">✕</button>
+        </div>
+        <label class="field-label">Description<input class="cell-input" value="${esc(d.notation)}" placeholder="What was this for?" onchange="updateDaily(${i},'notation',this.value)"></label>
+        <div class="item-fields-grid three">
+          <label class="field-label">Qty<input class="cell-input num" type="number" step="any" inputmode="decimal" value="${d.quantity}" onchange="updateDaily(${i},'quantity',this.value)"></label>
+          <label class="field-label">Received (₹)<input class="cell-input num" type="number" step="any" inputmode="decimal" value="${d.received}" onchange="updateDaily(${i},'received',this.value)"></label>
+          <label class="field-label">Spent (₹)<input class="cell-input num" type="number" step="any" inputmode="decimal" value="${d.spent}" onchange="updateDaily(${i},'spent',this.value)"></label>
+        </div>
+        <label class="field-label">Remark<input class="cell-input" value="${esc(d.remark1)}" onchange="updateDaily(${i},'remark1',this.value)"></label>
+        <div class="qty-badge">Balance after this entry: <b>${inr(runRow ? runRow.balance : 0)}</b></div>
+      </div>`;
+    }).join('')}
     <button class="linkbtn" onclick="addDaily()">+ Add Entry</button>
   </div>`;
 }
@@ -466,7 +499,7 @@ function addDaily() {
   state.project.dailySpend.push({id: uid('day'), date: today, notation:'', quantity:0, received:0, spent:0, remark1:'', remark2:''});
   refreshAndRender();
 }
-function updateDaily(i, field, val) { state.project.dailySpend[i][field] = val; saveProject(state.project); render(); }
+function updateDaily(i, field, val) { setField(state.project.dailySpend[i], field, val, ['quantity','received','spent']); saveProject(state.project); render(); }
 function deleteDaily(i) { state.project.dailySpend.splice(i,1); refreshAndRender(); }
 window.addDaily = addDaily; window.updateDaily = updateDaily; window.deleteDaily = deleteDaily;
 
@@ -512,7 +545,7 @@ function addTask() {
   state.project.schedule.push({id: uid('task'), task:'New Task', category:'', plannedStart:'', plannedEnd:'', actualStart:'', actualEnd:'', status:'Not Started', progressPct:0, notes:''});
   refreshAndRender();
 }
-function updateTask(i, field, val) { state.project.schedule[i][field] = val; saveProject(state.project); render(); }
+function updateTask(i, field, val) { setField(state.project.schedule[i], field, val, ['progressPct']); saveProject(state.project); render(); }
 function deleteTask(i) { state.project.schedule.splice(i,1); refreshAndRender(); }
 window.addTask = addTask; window.updateTask = updateTask; window.deleteTask = deleteTask;
 
@@ -576,12 +609,9 @@ function esc(s) {
 
 /* ---------- boot ---------- */
 document.addEventListener('DOMContentLoaded', () => {
-  const root = getRoot();
-  if (root.activeProjectId && root.projects[root.activeProjectId]) {
-    route('dashboard');
-  } else {
-    route('projects');
-  }
+  // Always land on the project list first. Opening a project is an explicit
+  // tap, never something the app should assume on your behalf.
+  route('projects');
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('service-worker.js').catch(()=>{});
   }
