@@ -29,7 +29,8 @@ function inr(n) { return '₹' + fmt(n); }
 function route(screen) {
   state.screen = screen;
   state.project = getActiveProject();
-  if (screen !== 'projects' && !state.project) { state.screen = 'projects'; }
+  const noProjectNeeded = screen === 'projects' || screen === 'account';
+  if (!noProjectNeeded && !state.project) { state.screen = 'projects'; }
   render();
   window.scrollTo(0, 0);
 }
@@ -41,12 +42,13 @@ function refreshAndRender() {
 }
 
 function render() {
-  const showNav = state.screen !== 'projects';
+  const showNav = state.screen !== 'projects' && state.screen !== 'account';
   NAV.classList.toggle('hidden', !showNav);
   if (showNav) renderNav();
 
   switch (state.screen) {
     case 'projects': APP.innerHTML = screenProjects(); break;
+    case 'account': APP.innerHTML = screenAccount(); break;
     case 'dashboard': APP.innerHTML = screenDashboard(); break;
     case 'measurements': APP.innerHTML = screenMeasurements(); break;
     case 'coefficients': APP.innerHTML = screenCoefficients(); break;
@@ -80,7 +82,10 @@ function renderNav() {
 function screenProjects() {
   const projects = listProjects();
   return `
-  <div class="topbar"><h1>My Projects</h1></div>
+  <div class="topbar">
+    <h1>My Projects</h1>
+    <button class="iconbtn-light" onclick="route('account')" title="Account & Backup">☁️</button>
+  </div>
   <div class="content">
     ${projects.length === 0 ? `<div class="empty">No projects yet. Create your first one, or import an existing Excel file.</div>` : ''}
     <div class="card-list">
@@ -214,7 +219,11 @@ function screenMeasurements() {
   return `
   <div class="topbar"><button class="back" onclick="route('dashboard')">‹</button><h1>Measurements (BOQ)</h1></div>
   <div class="content">
-    ${p.sections.length === 0 ? '<div class="empty">No sections yet. Add a work section (e.g. Excavation, Footing, Brick Work) to start entering measurements.</div>' : ''}
+    ${p.sections.length === 0 ? '<div class="empty">No sections yet. Add a work section (e.g. Excavation, Footing, Brick Work) to start entering measurements.</div>' : `
+    <div class="collapse-all-row">
+      <button class="linkbtn" onclick="setAllSectionsCollapsed(true)">Collapse All</button>
+      <button class="linkbtn" onclick="setAllSectionsCollapsed(false)">Expand All</button>
+    </div>`}
     ${p.sections.map(sec => renderSection(p, sec)).join('')}
   </div>
   <div class="fab-row">
@@ -224,18 +233,25 @@ function screenMeasurements() {
 
 function renderSection(p, sec) {
   const t = computeSectionTotals(p, sec);
+  const collapsed = !!sec.collapsed;
+  const itemCount = (sec.items||[]).length;
   return `
   <div class="card">
     <div class="card-header">
+      <button class="chevron-btn" onclick="toggleSectionCollapse('${sec.id}')">${collapsed ? '▸' : '▾'}</button>
       <input class="inline-input title" value="${esc(sec.name)}" onchange="updateSectionField('${sec.id}','name',this.value)">
       <button class="iconbtn danger" onclick="deleteSectionUI('${sec.id}')">🗑</button>
     </div>
-    ${(sec.items||[]).length === 0 ? '<div class="empty small">No items yet.</div>' : ''}
+    ${collapsed
+      ? `<div class="collapsed-summary" onclick="toggleSectionCollapse('${sec.id}')">${itemCount} item${itemCount===1?'':'s'} · Qty ${fmt(t.qty)} · Cement ${fmt(t.cement)} bags</div>`
+      : `
+    ${itemCount === 0 ? '<div class="empty small">No items yet.</div>' : ''}
     <div class="item-card-list">
       ${(sec.items||[]).map(item => renderItemCard(p, sec, item)).join('')}
     </div>
     <div class="section-total">Section Total — Qty: <b>${fmt(t.qty)}</b> &nbsp;·&nbsp; Cement: <b>${fmt(t.cement)}</b> bags &nbsp;·&nbsp; M.Sand: <b>${fmt(t.mSand)}</b> cft &nbsp;·&nbsp; Bricks: <b>${fmt(t.bricks)}</b> &nbsp;·&nbsp; Agg: <b>${fmt(t.agg)}</b> cft</div>
     <button class="linkbtn" onclick="addItemUI('${sec.id}')">+ Add Item</button>
+    `}
   </div>`;
 }
 
@@ -245,10 +261,23 @@ function renderSection(p, sec) {
 // tap or read reliably. Stacked fields give every input room to be used.
 function renderItemCard(p, sec, item) {
   const m = computeItemMaterials(p, item);
+  const collapsed = !!item.collapsed;
+  if (collapsed) {
+    return `
+    <div class="item-card collapsed" onclick="toggleItemCollapse('${sec.id}','${item.id}')">
+      <div class="item-card-head" style="margin-bottom:0">
+        <button class="chevron-btn small">▸</button>
+        <span class="item-desc">${esc(item.description) || '<em>Untitled item</em>'}</span>
+        <span class="qty-badge">${fmt(m.qty)}</span>
+        <button class="iconbtn danger" onclick="event.stopPropagation(); deleteItemUI('${sec.id}','${item.id}')">✕</button>
+      </div>
+    </div>`;
+  }
   const notationOptions = p.coefficients.map(c => `<option value="${c.notation}" ${item.notation===c.notation?'selected':''}>${c.notation} — ${esc(c.label)}</option>`).join('');
   return `
   <div class="item-card">
     <div class="item-card-head">
+      <button class="chevron-btn small" onclick="toggleItemCollapse('${sec.id}','${item.id}')">▾</button>
       <input class="cell-input item-desc" value="${esc(item.description)}" placeholder="Item description"
         onchange="updateItemField('${sec.id}','${item.id}','description',this.value)">
       <button class="iconbtn danger" onclick="deleteItemUI('${sec.id}','${item.id}')">✕</button>
@@ -267,6 +296,26 @@ function renderItemCard(p, sec, item) {
     <div class="item-materials">Cement ${fmt(m.cement)} bags · P.Sand ${fmt(m.pSand)} cft · M.Sand ${fmt(m.mSand)} cft · Bricks ${fmt(m.bricks)} · Agg ${fmt(m.agg)} cft</div>
   </div>`;
 }
+function toggleSectionCollapse(secId) {
+  const sec = state.project.sections.find(s => s.id === secId);
+  sec.collapsed = !sec.collapsed;
+  saveProject(state.project);
+  render();
+}
+function toggleItemCollapse(secId, itemId) {
+  const sec = state.project.sections.find(s => s.id === secId);
+  const item = sec.items.find(i => i.id === itemId);
+  item.collapsed = !item.collapsed;
+  saveProject(state.project);
+  render();
+}
+function setAllSectionsCollapsed(val) {
+  state.project.sections.forEach(s => { s.collapsed = val; (s.items||[]).forEach(i => i.collapsed = val); });
+  refreshAndRender();
+}
+window.toggleSectionCollapse = toggleSectionCollapse;
+window.toggleItemCollapse = toggleItemCollapse;
+window.setAllSectionsCollapsed = setAllSectionsCollapsed;
 
 function addSectionUI() {
   const name = prompt('Section name (e.g. "Footing", "Brick Work"):');
@@ -692,6 +741,7 @@ function screenSettings() {
       <button class="menu-item" onclick="route('coefficients')">🧮 Coefficients (material mix ratios) <span>›</span></button>
       <button class="menu-item" onclick="route('rates')">💰 Schedule of Rates (cost/unit) <span>›</span></button>
       <button class="menu-item" onclick="route('spend')">📦 Material Spend Tracker <span>›</span></button>
+      <button class="menu-item" onclick="route('account')">☁️ Cloud Backup & Sync <span>›</span></button>
     </div>
 
     <div class="section-title">Data</div>
@@ -726,6 +776,95 @@ async function handleImportIntoProject(evt) {
 window.updateProjField = updateProjField;
 window.handleImportIntoProject = handleImportIntoProject;
 
+/* ================= ACCOUNT: CLOUD BACKUP & MULTI-DEVICE SYNC ================= */
+function screenAccount() {
+  const configured = typeof cloudConfigured === 'function' && cloudConfigured();
+  const user = configured && typeof getCurrentCloudUser === 'function' ? getCurrentCloudUser() : null;
+  const sync = configured && typeof getSyncStatus === 'function' ? getSyncStatus() : { status: 'offline' };
+  const autoSync = typeof getAutoSyncPref === 'function' ? getAutoSyncPref() : true;
+
+  return `
+  <div class="topbar"><button class="back" onclick="route('projects')">‹</button><h1>Cloud Backup & Sync</h1></div>
+  <div class="content">
+    ${!configured ? `
+      <div class="empty">
+        Cloud sync isn't set up yet. It's optional — the app works fully
+        offline without it. To turn it on, follow the steps in
+        <b>js/firebase-config.js</b> (also explained in README.md) to
+        connect your own free Firebase project, then reload the app.
+      </div>
+    ` : user ? `
+      <div class="mini-table">
+        <div class="mini-row"><span>Signed in as</span><b>${esc(user.email)}</b></div>
+        <div class="mini-row"><span>Sync status</span><b>${syncStatusLabel(sync)}</b></div>
+      </div>
+      <div class="form-row" style="margin-top:16px">
+        <label>Auto-sync</label>
+        <input type="checkbox" ${autoSync ? 'checked' : ''} onchange="toggleAutoSync(this.checked)" style="width:22px;height:22px">
+      </div>
+      <p class="hint">When on, every change you make here syncs to your account automatically (while online), so it shows up on your other signed-in devices too.</p>
+      <div class="menu-list" style="margin-top:14px">
+        <button class="menu-item" onclick="handleBackupNow()">☁️ Backup All Projects Now <span>›</span></button>
+        <button class="menu-item" onclick="handleCloudSignOut()">🚪 Sign Out <span>›</span></button>
+      </div>
+    ` : `
+      <p class="hint">Sign in to back up your projects to the cloud and pick up the same projects on another phone. Your local data stays exactly where it is either way.</p>
+      <div class="form-row"><label>Email</label><input class="cell-input" type="email" id="acctEmail" placeholder="you@example.com"></div>
+      <div class="form-row"><label>Password</label><input class="cell-input" type="password" id="acctPassword" placeholder="At least 6 characters"></div>
+      <div id="acctError" class="boot-error" style="display:none;margin:12px 0"></div>
+      <div class="quick-actions" style="margin-top:6px">
+        <button class="qa" onclick="handleCloudSignIn()">Sign In</button>
+        <button class="qa" onclick="handleCloudSignUp()">Create Account</button>
+      </div>
+    `}
+    <div class="section-title">Local Backup (always available, no sign-in needed)</div>
+    <div class="menu-list">
+      <button class="menu-item" onclick="handleDownloadBackup()">💾 Download Local Backup (.json) <span>›</span></button>
+    </div>
+    <p class="hint">This saves every project on this device to one file — keep a copy somewhere safe (email it to yourself, save to Drive) as insurance against clearing your browser's storage.</p>
+  </div>`;
+}
+function syncStatusLabel(sync) {
+  if (sync.status === 'synced') return '✓ Up to date';
+  if (sync.status === 'syncing') return 'Syncing…';
+  if (sync.status === 'error') return '⚠ Error — ' + esc(sync.error || 'check connection');
+  return sync.status;
+}
+function showAcctError(msg) {
+  const el = document.getElementById('acctError');
+  if (el) { el.style.display = 'block'; el.innerHTML = '<b>Couldn\'t sign in</b>' + esc(msg); }
+}
+async function handleCloudSignIn() {
+  const email = document.getElementById('acctEmail').value.trim();
+  const password = document.getElementById('acctPassword').value;
+  try { await cloudSignIn(email, password); route('account'); }
+  catch (e) { showAcctError(e.message); }
+}
+async function handleCloudSignUp() {
+  const email = document.getElementById('acctEmail').value.trim();
+  const password = document.getElementById('acctPassword').value;
+  try { await cloudSignUp(email, password); route('account'); }
+  catch (e) { showAcctError(e.message); }
+}
+async function handleCloudSignOut() { await cloudSignOut(); route('account'); }
+async function handleBackupNow() {
+  await pushAllProjectsNow();
+  alert('Backup pushed to the cloud.');
+  render();
+}
+function handleDownloadBackup() {
+  const root = getRoot();
+  const blob = new Blob([JSON.stringify(root, null, 2)], { type: 'application/json' });
+  downloadBlob(blob, 'boq-tracker-backup-' + todayStr() + '.json');
+}
+function toggleAutoSync(on) { setAutoSyncPref(on); render(); }
+window.handleCloudSignIn = handleCloudSignIn;
+window.handleCloudSignUp = handleCloudSignUp;
+window.handleCloudSignOut = handleCloudSignOut;
+window.handleBackupNow = handleBackupNow;
+window.handleDownloadBackup = handleDownloadBackup;
+window.toggleAutoSync = toggleAutoSync;
+
 function esc(s) {
   if (s === undefined || s === null) return '';
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -749,4 +888,13 @@ document.addEventListener('DOMContentLoaded', () => {
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('service-worker.js').catch(()=>{});
   }
+  if (typeof initCloud === 'function') initCloud();
 });
+
+// Fired by cloud-sync.js whenever sign-in state changes (including the
+// initial pull-and-merge completing) — re-render so the Settings screen and
+// project list reflect newly-synced data without the user having to
+// navigate away and back.
+window.onCloudAuthChanged = function () {
+  render();
+};

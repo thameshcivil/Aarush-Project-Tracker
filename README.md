@@ -83,6 +83,12 @@ then **+ Add Item** inside it. Each item is its own card:
 Materials (cement/sand/bricks/aggregate) calculate automatically from the
 notation's coefficient the moment you edit any field.
 
+Each section and each item card has a ▾/▸ chevron — tap it to collapse a
+section down to a one-line summary (item count, quantity, cement) or an
+item down to just its description and quantity. Handy once a project has a
+lot of items. **Collapse All / Expand All** at the top of the screen does
+it for everything at once. Collapsed state is remembered per project.
+
 ### Editing coefficients (material mix ratios)
 More → **Coefficients**. This is "how much cement/sand/bricks per unit" for
 each work type. Edit a number here and every BOQ item using that notation
@@ -135,6 +141,39 @@ Home → **⬆ Import Excel**, or from within a project, More → **Import Excel
 into this project** (this overwrites that project's current data). Only
 needed if you're bringing in a spreadsheet you already have — not required
 for normal use.
+
+### Cloud Backup & Multi-Device Sync (optional)
+By default the app is fully offline/local — this section only matters if
+you want to sign in and use the same projects across two phones.
+
+**Setup (one-time, ~10 minutes, free, no credit card):**
+1. Go to [console.firebase.google.com](https://console.firebase.google.com),
+   sign in with any Google account, click **Add project**.
+2. **Build → Authentication → Get started** → enable **Email/Password**.
+3. **Build → Firestore Database → Create database** → production mode →
+   any nearby region.
+4. **Project Settings** (gear icon) → **Your apps** → click **</>** (web) →
+   register the app → copy the `firebaseConfig` values shown.
+5. Open `js/firebase-config.js` in your repo and paste those 6 values in,
+   replacing the `YOUR_...` placeholders. Commit.
+6. In Firestore → **Rules** tab, paste the rule shown at the top of
+   `js/firebase-config.js` and click **Publish** — this makes sure each
+   person can only read/write their own data.
+7. Reload the app. **More → Cloud Backup & Sync** (or the ☁️ icon on the
+   Home screen) now shows a sign-up form instead of the "not set up"
+   message.
+
+**Using it:** create an account (email + password) and every project on
+that device syncs up automatically. Sign in with the same account on
+another phone and its projects pull down automatically too. Editing on
+either device pushes the change; whichever edit is newer wins if you
+happen to edit the same project on both at once while offline. Turn off
+**Auto-sync** on the account screen to sync manually instead, via
+**Backup All Projects Now**.
+
+**Regardless of whether you set this up**, a **Download Local Backup
+(.json)** button on the same screen saves every project on this device to
+one file any time — a simple offline safety net, no sign-in needed.
 
 ---
 

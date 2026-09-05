@@ -29,6 +29,7 @@ html, body {
 }
 .topbar h1 { font-size: 18px; margin: 0; font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .back { background: none; border: none; color: #fff; font-size: 26px; line-height: 1; cursor: pointer; padding: 0 4px; }
+.iconbtn-light { background: rgba(255,255,255,0.15); border: none; color: #fff; font-size: 16px; width: 36px; height: 36px; border-radius: 10px; cursor: pointer; }
 
 .content { padding: 16px; max-width: 720px; margin: 0 auto; }
 
@@ -150,6 +151,16 @@ html, body {
 .reorder-btns .iconbtn { width: 26px; height: 22px; font-size: 12px; padding: 0; }
 .reorder-btns .iconbtn:disabled { opacity: .3; }
 .muted-inline { color: var(--muted); font-weight: 400; font-size: 11.5px; }
+.chevron-btn {
+  background: #f0f2f1; border: none; border-radius: 8px; width: 32px; height: 32px;
+  font-size: 15px; cursor: pointer; color: var(--text); flex-shrink: 0;
+}
+.chevron-btn.small { width: 26px; height: 26px; font-size: 13px; }
+.collapse-all-row { display: flex; gap: 16px; margin-bottom: 10px; }
+.collapsed-summary { color: var(--muted); font-size: 13px; padding: 4px 2px 2px; cursor: pointer; }
+.item-card.collapsed { padding: 8px 12px; cursor: pointer; }
+.item-card.collapsed .item-card-head { align-items: center; }
+.item-card.collapsed .item-desc { font-weight: 500; font-size: 13.5px; }
 
 .section-total { font-size: 12.5px; color: var(--muted); margin: 10px 0; line-height: 1.6; }
 .linkbtn { background: none; border: none; color: var(--primary); font-weight: 600; font-size: 13px; cursor: pointer; padding: 4px 0; }

@@ -99,9 +99,11 @@ function setActiveProject(id) {
 function createProject(name) {
   const root = loadRoot();
   const p = newProject(name);
+  p.updatedAt = new Date().toISOString();
   root.projects[p.id] = p;
   root.activeProjectId = p.id;
   saveRoot(root);
+  saveListeners.forEach(cb => { try { cb(p); } catch (e) {} });
   return p;
 }
 
@@ -113,11 +115,16 @@ function duplicateProject(id, newName) {
   copy.id = uid('proj');
   copy.name = newName || (src.name + ' (Copy)');
   copy.createdAt = new Date().toISOString();
+  copy.updatedAt = copy.createdAt;
   root.projects[copy.id] = copy;
   root.activeProjectId = copy.id;
   saveRoot(root);
+  saveListeners.forEach(cb => { try { cb(copy); } catch (e) {} });
   return copy;
 }
+
+const deleteListeners = [];
+function onProjectDeleted(cb) { deleteListeners.push(cb); }
 
 function deleteProject(id) {
   const root = loadRoot();
@@ -127,12 +134,20 @@ function deleteProject(id) {
     root.activeProjectId = remaining.length ? remaining[0] : null;
   }
   saveRoot(root);
+  deleteListeners.forEach(cb => { try { cb(id); } catch (e) {} });
 }
 
+// Listeners fired after every local save — cloud-sync.js hooks in here so
+// db.js stays free of any knowledge of Firebase/network concerns.
+const saveListeners = [];
+function onProjectSaved(cb) { saveListeners.push(cb); }
+
 function saveProject(project) {
+  project.updatedAt = new Date().toISOString();
   const root = loadRoot();
   root.projects[project.id] = project;
   saveRoot(root);
+  saveListeners.forEach(cb => { try { cb(project); } catch (e) { console.error('save listener failed', e); } });
 }
 
 /* ---------- Computation engine ---------- */
