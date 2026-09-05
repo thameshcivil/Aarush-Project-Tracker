@@ -77,6 +77,13 @@ function exportProjectToWorkbook(project) {
   maRows.push(['TOTAL', '', '', '', ma.totalAmount, ma.totalSpend, ma.toBeSpend]);
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([maHeader, ...maRows]), 'Main Abstract');
 
+  // --- Plinth Area Estimate sheet (separate quick-estimate method) ---
+  const plinth = computePlinthAreaEstimate(project);
+  const plinthHeader = ['Description', 'Area (Sqft)', 'Rate (₹/Sqft)', 'Amount'];
+  const plinthRows = plinth.rows.map(r => [r.description, r.area, r.rate, r.amount]);
+  plinthRows.push(['TOTAL', '', '', plinth.total]);
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([plinthHeader, ...plinthRows]), 'Plinth Area Estimate');
+
   // --- Material Spend sheet (linked: required qty comes from the BOQ) ---
   const linked = computeMaterialSpendLinked(project);
   const msHeader = ['Material', 'Required Qty', 'Purchased Qty', 'Remaining Qty', 'Total Spend', 'Remaining to Spend'];
@@ -168,6 +175,13 @@ function importWorkbookToProject(wb, projectName) {
     });
   }
 
+  const plinthSheet = sheet('Plinth Area Estimate');
+  if (plinthSheet && plinthSheet.length > 1) {
+    project.plinthAreaRows = plinthSheet.slice(1).filter(r => r[0] && r[0] !== 'TOTAL').map(r => ({
+      id: uid('plinth'), description: r[0], area: num(r[1]), rate: num(r[2]),
+    }));
+  }
+
   const ms = sheet('Material Spend');
   if (ms && ms.length > 1) {
     // New layout: Material, Required Qty, Purchased Qty, Remaining Qty, Total Spend, Remaining to Spend
@@ -181,7 +195,7 @@ function importWorkbookToProject(wb, projectName) {
   if (ds && ds.length > 1) {
     project.dailySpend = ds.slice(1).filter(r => r[1] && r[1] !== 'TOTAL').map(r => ({
       id: uid('day'), date: normalizeDateCell(r[0]), notation: r[1] || '', quantity: num(r[2]),
-      received: num(r[3]), spent: num(r[4]), remark1: r[6] || '', remark2: r[7] || '',
+      received: num(r[3]), spent: num(r[4]), remark1: r[6] || '', remark2: r[7] || '', collapsed: true,
     }));
   }
 
@@ -191,7 +205,7 @@ function importWorkbookToProject(wb, projectName) {
     // Planned dates are recalculated from the start date + order, so they aren't imported directly.
     project.schedule = sch.slice(1).filter(r => r[0]).map(r => ({
       id: uid('task'), task: r[0], category: r[1] || '', durationDays: num(r[2], 1), labour: num(r[3]),
-      actualStart: normalizeDateCell(r[6]), actualEnd: normalizeDateCell(r[7]), status: r[8] || 'Not Started', progressPct: num(r[9]), notes: r[10] || '', linkedSectionId: '',
+      actualStart: normalizeDateCell(r[6]), actualEnd: normalizeDateCell(r[7]), status: r[8] || 'Not Started', progressPct: num(r[9]), notes: r[10] || '', linkedSectionId: '', collapsed: true,
     }));
   }
 

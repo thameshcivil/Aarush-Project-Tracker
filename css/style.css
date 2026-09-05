@@ -151,6 +151,34 @@ html, body {
 .reorder-btns .iconbtn { width: 26px; height: 22px; font-size: 12px; padding: 0; }
 .reorder-btns .iconbtn:disabled { opacity: .3; }
 .muted-inline { color: var(--muted); font-weight: 400; font-size: 11.5px; }
+.txn-list { display: flex; flex-direction: column; background: var(--card); border-radius: var(--radius); overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.06); margin-bottom: 12px; }
+.txn-row {
+  display: flex; align-items: center; gap: 10px; padding: 12px 14px;
+  border-bottom: 1px solid var(--border); cursor: pointer; min-height: 44px;
+}
+.txn-row:last-child { border-bottom: none; }
+.txn-date { font-size: 11px; color: var(--muted); width: 68px; flex-shrink: 0; }
+.txn-desc { flex: 1; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.txn-amount { font-size: 13.5px; font-weight: 700; flex-shrink: 0; }
+.txn-amount.positive { color: var(--primary-dark); }
+.txn-amount.negative { color: var(--danger); }
+.txn-balance { font-size: 11px; color: var(--muted); width: 68px; text-align: right; flex-shrink: 0; }
+.gantt-table { background: var(--card); border-radius: var(--radius); overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.06); margin-bottom: 12px; }
+.gantt-header {
+  display: flex; justify-content: space-between; padding: 8px 14px; font-size: 10.5px;
+  font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted);
+  border-bottom: 1px solid var(--border); background: #f7faf8;
+}
+.gantt-row {
+  display: flex; align-items: center; gap: 10px; padding: 12px 14px;
+  border-bottom: 1px solid var(--border); cursor: pointer; min-height: 44px;
+}
+.gantt-row:last-child { border-bottom: none; }
+.gantt-row-main { flex: 1; min-width: 0; }
+.gantt-row-name { font-size: 13.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gantt-row-dates { font-size: 11px; color: var(--muted); margin: 3px 0 5px; }
+.gantt-row-pct { font-size: 13px; font-weight: 700; color: var(--primary-dark); width: 38px; text-align: right; flex-shrink: 0; }
+.progress-bar.mini { height: 4px; }
 .chevron-btn {
   background: #f0f2f1; border: none; border-radius: 8px; width: 32px; height: 32px;
   font-size: 15px; cursor: pointer; color: var(--text); flex-shrink: 0;

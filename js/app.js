@@ -163,15 +163,35 @@ function screenDashboard() {
   const sch = computeScheduleProgress(p);
   const today = computeTodayReport(p);
   const upcoming = computeUpcomingWork(p, 7);
+  const plinth = computePlinthAreaEstimate(p);
   return `
   <div class="topbar"><button class="back" onclick="route('projects')">‹</button><h1>${esc(p.name)}</h1></div>
   <div class="content">
     <div class="stat-grid">
-      <div class="stat"><div class="stat-label">Est. Project Cost</div><div class="stat-value">${inr(ma.totalAmount)}</div></div>
+      <div class="stat"><div class="stat-label">Est. Cost (Detailed)</div><div class="stat-value">${inr(ma.totalAmount)}</div></div>
       <div class="stat"><div class="stat-label">Spent so far</div><div class="stat-value">${inr(ma.totalSpend)}</div></div>
       <div class="stat"><div class="stat-label">Cash Balance</div><div class="stat-value">${inr(ds.balance)}</div></div>
       <div class="stat"><div class="stat-label">Schedule Progress</div><div class="stat-value">${sch.pct}%</div></div>
     </div>
+
+    <div class="section-title">🏗️ Plinth Area Cost Estimate (editable)</div>
+    <p class="hint">A quick, independent estimate using built-up area × rate per sqft — handy to sanity-check against the BOQ cost above. Add one row per block or floor if needed.</p>
+    <div class="item-card-list">
+      ${(plinth.rows||[]).map((r,i) => `
+        <div class="item-card">
+          <div class="item-card-head">
+            <input class="cell-input item-desc" value="${esc(r.description)}" placeholder="e.g. Ground Floor" onchange="updatePlinthRow(${i},'description',this.value)">
+            <button class="iconbtn danger" onclick="deletePlinthRow(${i})">✕</button>
+          </div>
+          <div class="item-fields-grid three">
+            <label class="field-label">Area (sqft)<input class="cell-input num" type="number" step="any" inputmode="decimal" value="${r.area}" onchange="updatePlinthRow(${i},'area',this.value)"></label>
+            <label class="field-label">Rate (₹/sqft)<input class="cell-input num" type="number" step="any" inputmode="decimal" value="${r.rate}" onchange="updatePlinthRow(${i},'rate',this.value)"></label>
+            <label class="field-label">Amount<div class="cell-input readonly">${inr(r.amount)}</div></label>
+          </div>
+        </div>`).join('') || '<div class="empty small">No rows yet — add your built-up area and a rate per sqft.</div>'}
+    </div>
+    <div class="section-total">Plinth Area Estimate Total: <b>${inr(plinth.total)}</b></div>
+    <button class="linkbtn" onclick="addPlinthRow()">+ Add Row</button>
 
     <div class="section-title">📋 Today (${today.today})</div>
     <div class="mini-table" onclick="route('today')" style="cursor:pointer">
@@ -205,6 +225,23 @@ function screenDashboard() {
     </div>
   </div>`;
 }
+function addPlinthRow() {
+  state.project.plinthAreaRows.push({ id: uid('plinth'), description: '', area: 0, rate: 0 });
+  refreshAndRender();
+}
+function updatePlinthRow(i, field, val) {
+  setField(state.project.plinthAreaRows[i], field, val, ['area','rate']);
+  saveProject(state.project);
+  render();
+}
+function deletePlinthRow(i) {
+  state.project.plinthAreaRows.splice(i,1);
+  refreshAndRender();
+}
+window.addPlinthRow = addPlinthRow;
+window.updatePlinthRow = updatePlinthRow;
+window.deletePlinthRow = deletePlinthRow;
+
 async function exportUI() {
   const blob = exportProjectToBlob(state.project);
   downloadBlob(blob, (state.project.name || 'project').replace(/[^a-z0-9\-_ ]/gi,'_') + '.xlsx');
@@ -273,7 +310,10 @@ function renderItemCard(p, sec, item) {
       </div>
     </div>`;
   }
-  const notationOptions = p.coefficients.map(c => `<option value="${c.notation}" ${item.notation===c.notation?'selected':''}>${c.notation} — ${esc(c.label)}</option>`).join('');
+  const notationExists = p.coefficients.some(c => c.notation === item.notation);
+  const notationOptions =
+    (notationExists ? '' : `<option value="${esc(item.notation)}" selected>⚠️ ${esc(item.notation)} (not in Coefficients — pick one below)</option>`)
+    + p.coefficients.map(c => `<option value="${c.notation}" ${item.notation===c.notation?'selected':''}>${c.notation} — ${esc(c.label)}</option>`).join('');
   return `
   <div class="item-card">
     <div class="item-card-head">
@@ -385,16 +425,51 @@ function screenCoefficients() {
   <div class="fab-row"><button class="fab" onclick="addCoeff()">+ Add Coefficient</button></div>`;
 }
 function updateCoeff(i, field, val) {
-  setField(state.project.coefficients[i], field, val, ['cement','pSand','mSand','bricks','agg']);
+  const coeff = state.project.coefficients[i];
+  if (field === 'notation') {
+    const oldNotation = coeff.notation;
+    const newNotation = val;
+    if (newNotation !== oldNotation) {
+      if (state.project.coefficients.some((c, ci) => ci !== i && c.notation === newNotation)) {
+        alert('Another coefficient already uses "' + newNotation + '". Notations must be unique, or items would get mixed up between them.');
+        render();
+        return;
+      }
+      // Cascade the rename so existing BOQ items don't silently end up
+      // pointing at a notation that no longer exists (which used to make
+      // their materials quietly drop to zero with no warning).
+      let itemsUpdated = 0;
+      state.project.sections.forEach(sec => {
+        (sec.items || []).forEach(item => {
+          if (item.notation === oldNotation) { item.notation = newNotation; itemsUpdated++; }
+        });
+      });
+      coeff.notation = newNotation;
+      saveProject(state.project);
+      render();
+      if (itemsUpdated > 0) alert('Updated ' + itemsUpdated + ' BOQ item' + (itemsUpdated===1?'':'s') + ' that used "' + oldNotation + '" to use the new name "' + newNotation + '".');
+      return;
+    }
+  }
+  setField(coeff, field, val, ['cement','pSand','mSand','bricks','agg']);
   saveProject(state.project);
   render();
 }
 function addCoeff() {
-  state.project.coefficients.push({ notation: 'NEW', label: 'New Work Type', cement:0, pSand:0, mSand:0, bricks:0, agg:0, unit:'Cft', note:'' });
+  const existing = new Set(state.project.coefficients.map(c => c.notation));
+  let n = 1;
+  while (existing.has('NEW' + n)) n++;
+  state.project.coefficients.push({ notation: 'NEW' + n, label: 'New Work Type', cement:0, pSand:0, mSand:0, bricks:0, agg:0, unit:'Cft', note:'' });
   refreshAndRender();
 }
 function deleteCoeff(i) {
-  if (!confirm('Delete this coefficient? Items using it will show zero materials.')) return;
+  const coeff = state.project.coefficients[i];
+  const affectedCount = state.project.sections.reduce((n, sec) =>
+    n + (sec.items || []).filter(it => it.notation === coeff.notation).length, 0);
+  const warning = affectedCount > 0
+    ? `Delete "${coeff.notation}"? ${affectedCount} BOQ item${affectedCount===1?'':'s'} currently use it and will show zero materials until you pick a different notation for them.`
+    : `Delete "${coeff.notation}"?`;
+  if (!confirm(warning)) return;
   state.project.coefficients.splice(i,1);
   refreshAndRender();
 }
@@ -464,38 +539,55 @@ function screenAbstracts() {
   const a1 = computeAbstract1(p);
   const a2 = computeAbstract2(p);
   const ma = computeMainAbstract(p);
+  const showDetail = !!state.abstractDetailOpen;
   return `
   <div class="topbar"><button class="back" onclick="route('dashboard')">‹</button><h1>Abstracts</h1></div>
   <div class="content">
-    <div class="section-title">Abstract-1 · By Work Section</div>
+    <div class="section-title">1. Materials You Need to Buy</div>
+    <p class="hint">Every measurement in your BOQ, added up by work type, with ${a2.wastagePct}% wastage built in — this is the "shopping list" total. The same numbers you see on the Dashboard.</p>
+    <p class="scroll-hint">↔ Swipe sideways to see every column</p>
+    <table class="item-table wide">
+      <thead><tr><th>Material</th><th>Raw Qty Needed</th><th>+ Wastage (${a2.wastagePct}%)</th></tr></thead>
+      <tbody>
+        <tr><td>Cement (Bags)</td><td>${fmt(a2.totals.cement)}</td><td><b>${fmt(a2.withWastage.cement)}</b></td></tr>
+        <tr><td>P.Sand (Cft)</td><td>${fmt(a2.totals.pSand)}</td><td><b>${fmt(a2.withWastage.pSand)}</b></td></tr>
+        <tr><td>M.Sand (Cft)</td><td>${fmt(a2.totals.mSand)}</td><td><b>${fmt(a2.withWastage.mSand)}</b></td></tr>
+        <tr><td>Bricks (Nos)</td><td>${fmt(a2.totals.bricks)}</td><td><b>${fmt(a2.withWastage.bricks)}</b></td></tr>
+        <tr><td>20mm Aggregate (Cft)</td><td>${fmt(a2.totals.agg)}</td><td><b>${fmt(a2.withWastage.agg)}</b></td></tr>
+      </tbody>
+    </table>
+
+    <div class="section-title">2. What It'll Cost</div>
+    <p class="hint">The materials above, priced using your Schedule of Rates, plus anything in Other Cost Items (doors, electrical, labour, etc.). "Spent" here is your Daily Spend Ledger's running total — log spend there and this updates automatically.</p>
+    <p class="scroll-hint">↔ Swipe sideways to see every column</p>
+    <table class="item-table wide">
+      <thead><tr><th>Item</th><th>Qty</th><th>Rate</th><th>Est. Cost</th></tr></thead>
+      <tbody>
+        ${ma.rows.map(r => `<tr><td>${esc(r.material)}</td><td>${fmt(r.qty)}</td><td>${fmt(r.rate)}</td><td>${inr(r.amount)}</td></tr>`).join('')}
+        <tr class="totalrow"><td>TOTAL EST. COST</td><td></td><td></td><td>${inr(ma.totalAmount)}</td></tr>
+      </tbody>
+    </table>
+    <div class="mini-table">
+      <div class="mini-row"><span>Spent so far (from Daily Spend Ledger)</span><b>${inr(ma.totalSpend)}</b></div>
+      <div class="mini-row"><span>Still to spend</span><b>${inr(ma.toBeSpend)}</b></div>
+      <div class="mini-row"><span class="muted-inline">Logged directly against materials/items (informational)</span><b class="muted-inline">${inr(ma.loggedSpend)}</b></div>
+    </div>
+
+    <div class="section-title" onclick="toggleAbstractDetail()" style="cursor:pointer">
+      ${showDetail ? '▾' : '▸'} 3. Detailed Breakdown by Work Section (optional)
+    </div>
+    ${showDetail ? `
+    <p class="hint">Same materials as above, but split out section by section (Excavation, Footing, Brick Work, etc.) instead of totaled together — useful for double-checking one part of the BOQ.</p>
     <p class="scroll-hint">↔ Swipe sideways to see every column</p>
     <table class="item-table wide">
       <thead><tr><th>Section</th><th>Notation</th><th>Qty</th><th>Cement</th><th>M.Sand</th><th>Bricks</th><th>Agg</th></tr></thead>
       <tbody>${a1.map(r => `<tr><td>${esc(r.label)}</td><td>${esc(r.notation)}</td><td>${fmt(r.qty)}</td><td>${fmt(r.cement)}</td><td>${fmt(r.mSand)}</td><td>${fmt(r.bricks)}</td><td>${fmt(r.agg)}</td></tr>`).join('')}</tbody>
     </table>
-
-    <div class="section-title">Abstract-2 · By Notation (with wastage)</div>
-    <p class="scroll-hint">↔ Swipe sideways to see every column</p>
-    <table class="item-table wide">
-      <thead><tr><th>Notation</th><th>Qty</th><th>Cement</th><th>M.Sand</th><th>Bricks</th><th>Agg</th></tr></thead>
-      <tbody>
-        ${a2.rows.map(r => `<tr><td>${esc(r.notation)}</td><td>${fmt(r.qty)}</td><td>${fmt(r.cement)}</td><td>${fmt(r.mSand)}</td><td>${fmt(r.bricks)}</td><td>${fmt(r.agg)}</td></tr>`).join('')}
-        <tr class="totalrow"><td>Total</td><td>${fmt(a2.totals.qty)}</td><td>${fmt(a2.totals.cement)}</td><td>${fmt(a2.totals.mSand)}</td><td>${fmt(a2.totals.bricks)}</td><td>${fmt(a2.totals.agg)}</td></tr>
-        <tr class="totalrow"><td>+ Wastage (${a2.wastagePct}%)</td><td></td><td>${fmt(a2.withWastage.cement)}</td><td>${fmt(a2.withWastage.mSand)}</td><td>${fmt(a2.withWastage.bricks)}</td><td>${fmt(a2.withWastage.agg)}</td></tr>
-      </tbody>
-    </table>
-
-    <div class="section-title">Main Abstract · Cost Estimate</div>
-    <p class="scroll-hint">↔ Swipe sideways to see every column</p>
-    <table class="item-table wide">
-      <thead><tr><th>Item</th><th>Qty</th><th>Rate</th><th>Amount</th><th>Spent</th><th>To Spend</th></tr></thead>
-      <tbody>
-        ${ma.rows.map(r => `<tr><td>${esc(r.material)}</td><td>${fmt(r.qty)}</td><td>${fmt(r.rate)}</td><td>${inr(r.amount)}</td><td>${inr(r.spend)}</td><td>${inr(r.toBeSpend)}</td></tr>`).join('')}
-        <tr class="totalrow"><td>TOTAL</td><td></td><td></td><td>${inr(ma.totalAmount)}</td><td>${inr(ma.totalSpend)}</td><td>${inr(ma.toBeSpend)}</td></tr>
-      </tbody>
-    </table>
+    ` : ''}
   </div>`;
 }
+function toggleAbstractDetail() { state.abstractDetailOpen = !state.abstractDetailOpen; render(); }
+window.toggleAbstractDetail = toggleAbstractDetail;
 
 /* ================= MATERIAL SPEND ================= */
 function screenMaterialSpend() {
@@ -561,31 +653,53 @@ function screenDailySpend() {
       <div class="stat"><div class="stat-label">Balance in Hand</div><div class="stat-value">${inr(run.balance)}</div></div>
     </div>
     ${(p.dailySpend||[]).length === 0 ? '<div class="empty small">No entries yet.</div>' : ''}
-    ${(p.dailySpend||[]).slice().reverse().map((d) => {
-      const i = p.dailySpend.indexOf(d);
-      const runRow = run.rows.find(r => r.id === d.id);
-      return `
-      <div class="item-card">
-        <div class="item-card-head">
-          <input class="cell-input" type="date" value="${d.date}" onchange="updateDaily(${i},'date',this.value)" style="max-width:150px">
-          <button class="iconbtn danger" onclick="deleteDaily(${i})">✕</button>
-        </div>
-        <label class="field-label">Description<input class="cell-input" value="${esc(d.notation)}" placeholder="What was this for?" onchange="updateDaily(${i},'notation',this.value)"></label>
-        <div class="item-fields-grid three">
-          <label class="field-label">Qty<input class="cell-input num" type="number" step="any" inputmode="decimal" value="${d.quantity}" onchange="updateDaily(${i},'quantity',this.value)"></label>
-          <label class="field-label">Received (₹)<input class="cell-input num" type="number" step="any" inputmode="decimal" value="${d.received}" onchange="updateDaily(${i},'received',this.value)"></label>
-          <label class="field-label">Spent (₹)<input class="cell-input num" type="number" step="any" inputmode="decimal" value="${d.spent}" onchange="updateDaily(${i},'spent',this.value)"></label>
-        </div>
-        <label class="field-label">Remark<input class="cell-input" value="${esc(d.remark1)}" onchange="updateDaily(${i},'remark1',this.value)"></label>
-        <div class="qty-badge">Balance after this entry: <b>${inr(runRow ? runRow.balance : 0)}</b></div>
-      </div>`;
-    }).join('')}
+    <div class="txn-list">
+      ${(p.dailySpend||[]).slice().reverse().map((d) => {
+        const i = p.dailySpend.indexOf(d);
+        const runRow = run.rows.find(r => r.id === d.id);
+        const balance = runRow ? runRow.balance : 0;
+        const collapsed = d.collapsed !== false; // default collapsed unless explicitly opened
+        if (collapsed) {
+          const isReceipt = num(d.received) > 0;
+          return `
+          <div class="txn-row" onclick="toggleDailyCollapse(${i})">
+            <div class="txn-date">${d.date || '—'}</div>
+            <div class="txn-desc">${esc(d.notation) || '<em>No description</em>'}</div>
+            <div class="txn-amount ${isReceipt ? 'positive' : 'negative'}">${isReceipt ? '+' + inr(d.received) : '−' + inr(d.spent)}</div>
+            <div class="txn-balance">${inr(balance)}</div>
+          </div>`;
+        }
+        return `
+        <div class="item-card">
+          <div class="item-card-head">
+            <button class="chevron-btn small" onclick="toggleDailyCollapse(${i})">▾</button>
+            <input class="cell-input" type="date" value="${d.date}" onchange="updateDaily(${i},'date',this.value)" style="max-width:150px">
+            <button class="iconbtn danger" onclick="deleteDaily(${i})">✕</button>
+          </div>
+          <label class="field-label">Description<input class="cell-input" value="${esc(d.notation)}" placeholder="What was this for?" onchange="updateDaily(${i},'notation',this.value)"></label>
+          <div class="item-fields-grid three">
+            <label class="field-label">Qty<input class="cell-input num" type="number" step="any" inputmode="decimal" value="${d.quantity}" onchange="updateDaily(${i},'quantity',this.value)"></label>
+            <label class="field-label">Received (₹)<input class="cell-input num" type="number" step="any" inputmode="decimal" value="${d.received}" onchange="updateDaily(${i},'received',this.value)"></label>
+            <label class="field-label">Spent (₹)<input class="cell-input num" type="number" step="any" inputmode="decimal" value="${d.spent}" onchange="updateDaily(${i},'spent',this.value)"></label>
+          </div>
+          <label class="field-label">Remark<input class="cell-input" value="${esc(d.remark1)}" onchange="updateDaily(${i},'remark1',this.value)"></label>
+          <div class="qty-badge">Balance after this entry: <b>${inr(balance)}</b></div>
+        </div>`;
+      }).join('')}
+    </div>
     <button class="linkbtn" onclick="addDaily()">+ Add Entry</button>
   </div>`;
 }
+function toggleDailyCollapse(i) {
+  const d = state.project.dailySpend[i];
+  d.collapsed = d.collapsed === false ? true : false;
+  saveProject(state.project);
+  render();
+}
+window.toggleDailyCollapse = toggleDailyCollapse;
 function addDaily() {
   const today = new Date().toISOString().slice(0,10);
-  state.project.dailySpend.push({id: uid('day'), date: today, notation:'', quantity:0, received:0, spent:0, remark1:'', remark2:''});
+  state.project.dailySpend.push({id: uid('day'), date: today, notation:'', quantity:0, received:0, spent:0, remark1:'', remark2:'', collapsed:false});
   refreshAndRender();
 }
 function updateDaily(i, field, val) { setField(state.project.dailySpend[i], field, val, ['quantity','received','spent']); saveProject(state.project); render(); }
@@ -616,7 +730,7 @@ function screenSchedule() {
       <label>Work starts</label>
       <input class="cell-input" type="date" value="${p.scheduleStartDate}" onchange="updateScheduleStart(this.value)">
     </div>
-    <p class="hint">Every task's dates are calculated from this start date plus each task's duration, in the order listed below. Reorder with ↑/↓ to change the plan.</p>
+    <p class="hint">Every task's dates are calculated from this start date plus each task's duration, in the order listed below. Reorder with ↑/↓ to change the plan. Tap a row to open it for editing.</p>
 
     ${upcoming.length ? `
     <div class="section-title">📅 Upcoming Work (next 7 days)</div>
@@ -625,8 +739,12 @@ function screenSchedule() {
     </div>` : ''}
 
     <div class="section-title">Work Items (in order)</div>
-    ${plan.length === 0 ? '<div class="empty">No work items yet. Add each task in the order you will do it — dates are calculated automatically.</div>' : ''}
-    ${plan.map((t,i) => renderTask(p, t, i, plan.length)).join('')}
+    ${plan.length === 0 ? '<div class="empty">No work items yet. Add each task in the order you will do it — dates are calculated automatically.</div>' : `
+    <div class="gantt-table">
+      <div class="gantt-header"><span>Task</span><span>Start → End</span><span>Progress</span></div>
+      ${plan.map((t,i) => renderTask(p, t, i, plan.length)).join('')}
+    </div>
+    `}
   </div>
   <div class="fab-row">
     <button class="fab secondary" onclick="generateScheduleFromBOQ()">⇅ From BOQ Sections</button>
@@ -635,11 +753,28 @@ function screenSchedule() {
 }
 function renderTask(project, t, i, total) {
   const pct = Number(t.progressPct)||0;
+  const collapsed = t.collapsed !== false; // default collapsed unless explicitly opened
+  if (collapsed) {
+    return `
+    <div class="gantt-row" onclick="toggleTaskCollapse(${i})">
+      <div class="reorder-btns" onclick="event.stopPropagation()">
+        <button class="iconbtn" ${i===0?'disabled':''} onclick="moveTask(${i},-1)">↑</button>
+        <button class="iconbtn" ${i===total-1?'disabled':''} onclick="moveTask(${i},1)">↓</button>
+      </div>
+      <div class="gantt-row-main">
+        <div class="gantt-row-name">${esc(t.task) || '<em>Untitled task</em>'} ${t.labour ? `<span class="muted-inline">· ${fmt(t.labour)} labour</span>` : ''}</div>
+        <div class="gantt-row-dates">${t.plannedStart} → ${t.plannedEnd} <span class="muted-inline">(${t.durationDays}d)</span> · ${esc(t.status)}</div>
+        <div class="progress-bar mini"><div class="progress-fill" style="width:${pct}%"></div></div>
+      </div>
+      <div class="gantt-row-pct">${pct}%</div>
+    </div>`;
+  }
   const statusOptions = ['Not Started','In Progress','Delayed','Completed'].map(s=>`<option ${t.status===s?'selected':''}>${s}</option>`).join('');
   const sectionOptions = ['<option value="">— link to a BOQ section (optional) —</option>']
     .concat(project.sections.map(s => `<option value="${s.id}" ${t.linkedSectionId===s.id?'selected':''}>${esc(s.name)}</option>`)).join('');
   return `<div class="card">
     <div class="card-header">
+      <button class="chevron-btn small" onclick="toggleTaskCollapse(${i})">▾</button>
       <div class="reorder-btns">
         <button class="iconbtn" ${i===0?'disabled':''} onclick="moveTask(${i},-1)">↑</button>
         <button class="iconbtn" ${i===total-1?'disabled':''} onclick="moveTask(${i},1)">↓</button>
@@ -665,8 +800,15 @@ function renderTask(project, t, i, total) {
     <textarea class="cell-input notes" placeholder="Notes" onchange="updateTask(${i},'notes',this.value)">${esc(t.notes||'')}</textarea>
   </div>`;
 }
+function toggleTaskCollapse(i) {
+  const t = state.project.schedule[i];
+  t.collapsed = t.collapsed === false ? true : false;
+  saveProject(state.project);
+  render();
+}
+window.toggleTaskCollapse = toggleTaskCollapse;
 function addTask() {
-  state.project.schedule.push({id: uid('task'), task:'New Task', category:'', durationDays:1, labour:0, actualStart:'', actualEnd:'', status:'Not Started', progressPct:0, notes:'', linkedSectionId:''});
+  state.project.schedule.push({id: uid('task'), task:'New Task', category:'', durationDays:1, labour:0, actualStart:'', actualEnd:'', status:'Not Started', progressPct:0, notes:'', linkedSectionId:'', collapsed:false});
   refreshAndRender();
 }
 function updateTask(i, field, val) { setField(state.project.schedule[i], field, val, ['progressPct','durationDays','labour']); saveProject(state.project); render(); }
@@ -686,7 +828,7 @@ function generateScheduleFromBOQ() {
   toAdd.forEach(s => {
     state.project.schedule.push({
       id: uid('task'), task: s.name, category: '', durationDays: 2, labour: 2,
-      actualStart: '', actualEnd: '', status: 'Not Started', progressPct: 0, notes: '', linkedSectionId: s.id,
+      actualStart: '', actualEnd: '', status: 'Not Started', progressPct: 0, notes: '', linkedSectionId: s.id, collapsed: true,
     });
   });
   refreshAndRender();

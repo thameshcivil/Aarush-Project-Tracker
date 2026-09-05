@@ -71,6 +71,7 @@ function newProject(name) {
     materialRates: JSON.parse(JSON.stringify(DEFAULT_MATERIAL_RATES)),
     sections: [], // [{id, label, name, items:[...]}]
     otherAbstractItems: [], // Main-abstract-only lines: Door, Window, Electrical, Plumbing, Labour, etc.
+    plinthAreaRows: [], // [{id, description, area, rate}] — quick manual cost estimate (Area x Rate method), separate from the BOQ-computed cost
     materialSpend: [], // [{id, material, purchasedQty, totalSpend}] — custom/extra materials only; the 5 bulk materials are auto-tracked, see computeMaterialSpendLinked
     dailySpend: [], // [{id, date, notation, quantity, received, spent, remark1, remark2}]
     schedule: [], // [{id, task, category, durationDays, labour, status, progressPct, notes, linkedSectionId}] — order = array order; dates are calculated, not stored
@@ -241,6 +242,14 @@ function rateFor(project, materialName) {
 }
 
 // Main Abstract: material cost rollup (bulk materials from Abstract-2 + any custom "other" lines)
+// Note on "spend": the per-row `spend` figures below come from whatever
+// you've logged in the Material Tracker / Other Cost Items — useful for
+// seeing which material or line item money went toward. But the single
+// headline "amount spent" figure (shown on the Dashboard and used for
+// "still to spend") is linked to the Daily Spend Ledger's running total
+// instead, since that's the one place a running cash total is actually
+// kept day-to-day — otherwise the two screens could show two different
+// "amount spent" numbers with nothing tying them together.
 function computeMainAbstract(project) {
   const a2 = computeAbstract2(project);
   const rows = [];
@@ -266,8 +275,9 @@ function computeMainAbstract(project) {
   });
 
   const totalAmount = rows.reduce((s, r) => s + num(r.amount), 0);
-  const totalSpend = rows.reduce((s, r) => s + num(r.spend), 0);
-  return { rows, totalAmount, totalSpend, toBeSpend: totalAmount - totalSpend };
+  const loggedSpend = rows.reduce((s, r) => s + num(r.spend), 0); // per-row breakdown total, informational only
+  const ledgerSpend = computeDailySpendRunning(project).totalSpent; // authoritative — linked to Daily Spend Ledger
+  return { rows, totalAmount, totalSpend: ledgerSpend, loggedSpend, toBeSpend: totalAmount - ledgerSpend };
 }
 
 function spentFor(project, materialName) {
@@ -294,6 +304,18 @@ function computeScheduleProgress(project) {
   const avg = tasks.reduce((s, t) => s + num(t.progressPct), 0) / tasks.length;
   const done = tasks.filter(t => num(t.progressPct) >= 100).length;
   return { pct: Math.round(avg), total: tasks.length, done };
+}
+
+// Plinth Area x Rate estimate — a quick manual cost estimate method common
+// in Indian residential construction, kept entirely separate from (and
+// alongside) the detailed BOQ-computed cost above. Lives on the Dashboard,
+// not its own screen.
+function computePlinthAreaEstimate(project) {
+  const rows = (project.plinthAreaRows || []).map(r => ({
+    ...r, amount: num(r.area) * num(r.rate),
+  }));
+  const total = rows.reduce((s, r) => s + r.amount, 0);
+  return { rows, total };
 }
 
 /* ---------- Linked material spend tracker ---------- */
