@@ -2,6 +2,24 @@
    xlsx-io.js — export project -> .xlsx (SheetJS) and import back
    ============================================================ */
 
+// Excel cells formatted as dates come back from SheetJS as raw serial
+// numbers (days since 1899-12-30), not 'YYYY-MM-DD' strings, whenever the
+// source spreadsheet had that cell typed as a real date rather than text.
+// Every date field in this app assumes a plain string, so anything numeric
+// or Date-shaped gets normalized here at the one place data enters the app
+// from outside — this is what actually prevents the corrupt-date crash,
+// the String() coercions elsewhere are just a second line of defense.
+function normalizeDateCell(val) {
+  if (val === undefined || val === null || val === '') return '';
+  if (val instanceof Date) return val.toISOString().slice(0, 10);
+  if (typeof val === 'number' && isFinite(val)) {
+    const utcDays = Math.floor(val - 25569); // Excel epoch -> Unix epoch
+    const d = new Date(utcDays * 86400 * 1000);
+    if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+  }
+  return String(val);
+}
+
 function exportProjectToWorkbook(project) {
   const wb = XLSX.utils.book_new();
 
@@ -162,7 +180,7 @@ function importWorkbookToProject(wb, projectName) {
   const ds = sheet('Daily Spend');
   if (ds && ds.length > 1) {
     project.dailySpend = ds.slice(1).filter(r => r[1] && r[1] !== 'TOTAL').map(r => ({
-      id: uid('day'), date: r[0] || '', notation: r[1] || '', quantity: num(r[2]),
+      id: uid('day'), date: normalizeDateCell(r[0]), notation: r[1] || '', quantity: num(r[2]),
       received: num(r[3]), spent: num(r[4]), remark1: r[6] || '', remark2: r[7] || '',
     }));
   }
@@ -173,7 +191,7 @@ function importWorkbookToProject(wb, projectName) {
     // Planned dates are recalculated from the start date + order, so they aren't imported directly.
     project.schedule = sch.slice(1).filter(r => r[0]).map(r => ({
       id: uid('task'), task: r[0], category: r[1] || '', durationDays: num(r[2], 1), labour: num(r[3]),
-      actualStart: r[6] || '', actualEnd: r[7] || '', status: r[8] || 'Not Started', progressPct: num(r[9]), notes: r[10] || '', linkedSectionId: '',
+      actualStart: normalizeDateCell(r[6]), actualEnd: normalizeDateCell(r[7]), status: r[8] || 'Not Started', progressPct: num(r[9]), notes: r[10] || '', linkedSectionId: '',
     }));
   }
 

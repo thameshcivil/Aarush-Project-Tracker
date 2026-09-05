@@ -279,7 +279,7 @@ function computeDailySpendRunning(project) {
   let received = 0, spent = 0;
   const rows = (project.dailySpend || [])
     .slice()
-    .sort((a, b) => (a.date || '').localeCompare(b.date || ''))
+    .sort((a, b) => dateCompare(a.date, b.date))
     .map(r => {
       received += num(r.received);
       spent += num(r.spent);
@@ -346,11 +346,18 @@ function computeMaterialSpendLinked(project) {
 /* ---------- Schedule of Work: workflow-driven, auto-calculated dates ---------- */
 
 function addDays(dateStr, days) {
-  const d = new Date((dateStr || todayStr()) + 'T00:00:00');
+  const d = new Date(String(dateStr || todayStr()) + 'T00:00:00');
   d.setDate(d.getDate() + days);
   return d.toISOString().slice(0, 10);
 }
 function todayStr() { return new Date().toISOString().slice(0, 10); }
+
+// Dates should always be plain 'YYYY-MM-DD' strings, but imported Excel
+// files can hand back raw serial-date numbers (or even Date objects) for
+// cells that were formatted as dates in the spreadsheet. Coercing both
+// sides to String() here means a stray non-string value degrades to a
+// wrong sort order instead of throwing and taking down the whole screen.
+function dateCompare(a, b) { return String(a || '').localeCompare(String(b || '')); }
 
 // Walks tasks in their listed order, chaining each one's start to right
 // after the previous one's end — the "ask the workflow, calculate the
@@ -372,7 +379,7 @@ function computeUpcomingWork(project, daysAhead) {
   const today = todayStr();
   return computeSchedulePlan(project)
     .filter(t => t.status !== 'Completed' && t.plannedStart <= horizon && t.plannedEnd >= today)
-    .sort((a, b) => a.plannedStart.localeCompare(b.plannedStart));
+    .sort((a, b) => dateCompare(a.plannedStart, b.plannedStart));
 }
 
 function computeTodayReport(project) {

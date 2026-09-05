@@ -3,7 +3,7 @@
 // silently NOT reach that phone until the service-worker.js bytes themselves
 // changed. Network-first fixes that: online, you always get the latest
 // files; offline, it falls back to whatever was last cached.
-const CACHE_NAME = 'boq-tracker-v3';
+const CACHE_NAME = 'boq-tracker-v4';
 const ASSETS = [
   './',
   './index.html',
